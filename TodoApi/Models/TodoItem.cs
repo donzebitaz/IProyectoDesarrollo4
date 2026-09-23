@@ -2,6 +2,14 @@ using System.ComponentModel.DataAnnotations;
 
 namespace TodoApi.Models
 {
+    public enum TodoStatus
+    {
+        Pendiente,
+        EnProgreso,
+        Completada,
+        Cancelada
+    }
+
     public class TodoItem 
     {
         [Key]    
@@ -13,7 +21,11 @@ namespace TodoApi.Models
         
         [MaxLength(1000)]
         public string Description {get;set;} = string.Empty;
-        public bool isCompleted {get;set;} = false; 
+
+        // Ahora se utiliza la maquina de estados
+        // TodoStatus en lugar de IsCompleted tipo booleano
+        public TodoStatus Status {get;set;} = TodoStatus.Pendiente;
+
         public DateTime CreatedAt {get;set;} = DateTime.Now; 
         public DateTime? CompletedAt {get;set;} 
 

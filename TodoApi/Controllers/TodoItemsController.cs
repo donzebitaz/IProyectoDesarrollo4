@@ -18,6 +18,15 @@ namespace TodoApi.Controllers
         //SYNC es cuando tengo una app y la aplicación se queda bloqueada hasta que la BD responda
         //ASYNC es cuando la aplicación realiza una petición a la base de datos y libera el hilo de ejecución actual mientras espera la respuesta, permitiendo que la aplicación continúe procesando otras solicitudes sin bloquearse.
 
+        //Diccionario de estados
+        private static readonly Dictionary<TodoStatus, TodoStatus[]> AllowedTransitions = new()
+        {
+            [TodoStatus.Pendiente] = new[] { TodoStatus.EnProgreso, TodoStatus.Cancelada },
+            [TodoStatus.EnProgreso] = new[] { TodoStatus.Completada, TodoStatus.Cancelada },
+            [TodoStatus.Completada] = Array.Empty<TodoStatus>(),
+            [TodoStatus.Cancelada] = Array.Empty<TodoStatus>()
+        };
+
         [HttpGet("{id:int}")]//indicando qué endpoint es
         public async Task<ActionResult<TodoItem>> GetTodoItem(int id)
         {
@@ -53,14 +62,38 @@ namespace TodoApi.Controllers
             return CreatedAtAction(nameof (GetTodoItem), new {id = todoItem.Id}, todoItem);//201: created and info of the new object
         }
 
+        [HttpPatch("{id:int}/status")]
+        public async Task<ActionResult<TodoItem>> UpdateStatus(int id, UpdateStatusDto dto)
+        {
+            var todoItem = await _context.TodoItems.FindAsync(id);
+            if (todoItem == null) return NotFound();
+
+            var currentStatus = todoItem.Status;
+
+            if (!AllowedTransitions[currentStatus].Contains(dto.Status))
+            {
+                return BadRequest($"Cannot transition from {currentStatus} to {dto.Status}.");
+            }
+
+            todoItem.Status = dto.Status;
+            if (dto.Status == TodoStatus.Completada)
+            {
+                todoItem.CompletedAt = DateTime.Now;
+            }
+
+            await _context.SaveChangesAsync();
+
+            return Ok(todoItem);
+        }
+
         [HttpGet] //IEnumerable, el más recomendado / Task<ActionResult<List<TodoItem>> tambien sirve
-        public async Task<ActionResult<IEnumerable<TodoItem>>> GetTodoItems([FromQuery] bool? completed, [FromQuery] int? categoryId)
+        public async Task<ActionResult<IEnumerable<TodoItem>>> GetTodoItems([FromQuery] TodoStatus? status, [FromQuery] int? categoryId)
         {
             var query = _context.TodoItems.Include(t => t.Category).AsQueryable();
 
-            if (completed.HasValue)
+            if (status.HasValue)
             {
-                query = query.Where(t => t.isCompleted == completed.Value);
+                query = query.Where(t => t.Status == status.Value);
             }
 
             if (categoryId.HasValue)
@@ -98,9 +131,7 @@ namespace TodoApi.Controllers
 
             todoItem.Title = updated.Title;
             todoItem.Description = updated.Description;
-            todoItem.isCompleted = updated.isCompleted;
             todoItem.CategoryId = updated.CategoryId;
-            todoItem.CompletedAt = updated.isCompleted ? DateTime.Now : null;
 
             await _context.SaveChangesAsync();
 
