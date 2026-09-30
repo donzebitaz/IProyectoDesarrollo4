@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using TodoApi.Data;
 using TodoApi.Models;
+using Microsoft.AspNetCore.Authorization;
 
 namespace TodoApi.Controllers
 {
@@ -27,6 +28,20 @@ namespace TodoApi.Controllers
             [TodoStatus.Cancelada] = Array.Empty<TodoStatus>()
         };
 
+
+        // Se hace uso de un helper para guardar las fechas en UTC.
+        private static DateTime? ToUtc(DateTime? date)
+        {
+            if (!date.HasValue) return null;
+
+            return date.Value.Kind switch
+            {
+                DateTimeKind.Utc => date.Value,                         // ya viene en UTC
+                DateTimeKind.Local => date.Value.ToUniversalTime(),     // convertir a UTC
+                _ => DateTime.SpecifyKind(date.Value, DateTimeKind.Utc) // sin zona se asume UTC
+            };
+        }
+
         [HttpGet("{id:int}")]//indicando qué endpoint es
         public async Task<ActionResult<TodoItem>> GetTodoItem(int id)
         {
@@ -35,7 +50,7 @@ namespace TodoApi.Controllers
             .FirstOrDefaultAsync(t => t.Id == id);//del contexto, saque que item es y guardelo
             //await -> cuando lo de la derecha funcione
 
-            if(todoItem == null) return NotFound();//404
+            if (todoItem == null) return NotFound();//404
 
             return Ok(todoItem); //200
             //early returns, terminar un método antes de tiempo (no tiene else porque ya se valida arriba)
@@ -52,6 +67,17 @@ namespace TodoApi.Controllers
                 var categoryExists = await _context.Categories.AnyAsync(t => t.Id == todoItem.CategoryId);
                 if (!categoryExists) return BadRequest("The specified category does not exist");//early return valido lo que puede salir mal y al final lo que quiero que salga completamente
             }
+
+
+            //fix pendiente: para que el cliente no decida el estado y toda tarea nueva esté en "Pendiente".
+            todoItem.Status = TodoStatus.Pendiente;
+            todoItem.CompletedAt = null;
+
+            // El servidor decide cuándo se creó 
+            todoItem.CreatedAt = DateTime.UtcNow;
+
+            todoItem.DueDate = ToUtc(todoItem.DueDate);
+
             //hey contexto, vaya su lista de TodoItems y agregue este elemento
             _context.TodoItems.Add(todoItem);
 
@@ -59,7 +85,7 @@ namespace TodoApi.Controllers
             await _context.SaveChangesAsync();
 
             ///return ok, but not works, because of convection
-            return CreatedAtAction(nameof (GetTodoItem), new {id = todoItem.Id}, todoItem);//201: created and info of the new object
+            return CreatedAtAction(nameof(GetTodoItem), new { id = todoItem.Id }, todoItem);//201: created and info of the new object
         }
 
         [HttpPatch("{id:int}/status")]
@@ -75,10 +101,16 @@ namespace TodoApi.Controllers
                 return BadRequest($"Cannot transition from {currentStatus} to {dto.Status}.");
             }
 
+            if (dto.Status == TodoStatus.Completada && todoItem.DueDate.HasValue && todoItem.DueDate.Value < DateTime.UtcNow
+               && !dto.Force)
+            {
+                return BadRequest("The task is overdue. Set \"force\": true to complete it anyway.");
+            }
+
             todoItem.Status = dto.Status;
             if (dto.Status == TodoStatus.Completada)
             {
-                todoItem.CompletedAt = DateTime.Now;
+                todoItem.CompletedAt = DateTime.UtcNow;
             }
 
             await _context.SaveChangesAsync();
@@ -87,7 +119,7 @@ namespace TodoApi.Controllers
         }
 
         [HttpGet] //IEnumerable, el más recomendado / Task<ActionResult<List<TodoItem>> tambien sirve
-        public async Task<ActionResult<IEnumerable<TodoItem>>> GetTodoItems([FromQuery] TodoStatus? status, [FromQuery] int? categoryId)
+        public async Task<ActionResult<IEnumerable<TodoItem>>> GetTodoItems([FromQuery] TodoStatus? status, [FromQuery] int? categoryId, [FromQuery] bool? overdue)
         {
             var query = _context.TodoItems.Include(t => t.Category).AsQueryable();
 
@@ -100,7 +132,15 @@ namespace TodoApi.Controllers
             {
                 query = query.Where(t => t.CategoryId == categoryId.Value);
             }
-                
+
+            // solo se muestran las tareas vencidas que todavía no están en un estado final.
+            if (overdue == true)
+            {
+                var now = DateTime.UtcNow;
+                query = query.Where(t => t.DueDate != null && t.DueDate < now && t.Status != TodoStatus.Completada
+                    && t.Status != TodoStatus.Cancelada);
+            }
+
             return Ok(await query.ToListAsync());//200
         }
 
@@ -121,17 +161,19 @@ namespace TodoApi.Controllers
         {
             var todoItem = await _context.TodoItems.FindAsync(id);
 
-            if(todoItem == null) return NotFound(); //404
+            if (todoItem == null) return NotFound(); //404
 
-            if(updated.CategoryId.HasValue)
+            if (updated.CategoryId.HasValue)
             {
                 var categoryExists = await _context.Categories.AnyAsync(t => t.Id == updated.CategoryId);
-                if(!categoryExists) return BadRequest("The specified category does not exist");
+                if (!categoryExists) return BadRequest("The specified category does not exist");
             }
 
             todoItem.Title = updated.Title;
             todoItem.Description = updated.Description;
             todoItem.CategoryId = updated.CategoryId;
+            todoItem.DueDate = ToUtc(updated.DueDate);
+
 
             await _context.SaveChangesAsync();
 

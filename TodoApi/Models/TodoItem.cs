@@ -26,8 +26,9 @@ namespace TodoApi.Models
         // TodoStatus en lugar de IsCompleted tipo booleano
         public TodoStatus Status {get;set;} = TodoStatus.Pendiente;
 
-        public DateTime CreatedAt {get;set;} = DateTime.Now; 
+        public DateTime CreatedAt {get;set;} = DateTime.UtcNow; 
         public DateTime? CompletedAt {get;set;} 
+        public DateTime? DueDate {get;set;}
 
         //llave foránea
         public int? CategoryId {get;set;}
