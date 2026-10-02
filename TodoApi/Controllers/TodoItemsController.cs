@@ -4,11 +4,13 @@ using Microsoft.EntityFrameworkCore;
 using TodoApi.Data;
 using TodoApi.Models;
 using Microsoft.AspNetCore.Authorization;
+using System.Security.Claims;
 
 namespace TodoApi.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class TodoItemsController : ControllerBase
     {
         private readonly TodoDbContext _context;
@@ -72,6 +74,9 @@ namespace TodoApi.Controllers
             //fix pendiente: para que el cliente no decida el estado y toda tarea nueva esté en "Pendiente".
             todoItem.Status = TodoStatus.Pendiente;
             todoItem.CompletedAt = null;
+
+            // El servidor es quien decide el dueño, sin importar que venga dentro del body
+            todoItem.OwnerId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
             // El servidor decide cuándo se creó 
             todoItem.CreatedAt = DateTime.UtcNow;

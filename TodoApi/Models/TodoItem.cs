@@ -30,6 +30,9 @@ namespace TodoApi.Models
         public DateTime? CompletedAt {get;set;} 
         public DateTime? DueDate {get;set;}
 
+        // Usuario que creo la tarea
+        public string OwnerId {get;set;} = string.Empty;
+
         //llave foránea
         public int? CategoryId {get;set;}
         public Category? Category {get;set;}
