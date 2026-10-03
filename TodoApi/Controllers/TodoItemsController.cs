@@ -47,12 +47,15 @@ namespace TodoApi.Controllers
         [HttpGet("{id:int}")]//indicando qué endpoint es
         public async Task<ActionResult<TodoItem>> GetTodoItem(int id)
         {
+            var ownerId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            
             var todoItem = await _context.TodoItems
             .Include(t => t.Category)
             .FirstOrDefaultAsync(t => t.Id == id);//del contexto, saque que item es y guardelo
             //await -> cuando lo de la derecha funcione
 
             if (todoItem == null) return NotFound();//404
+            if (todoItem.OwnerId != ownerId) return NotFound();
 
             return Ok(todoItem); //200
             //early returns, terminar un método antes de tiempo (no tiene else porque ya se valida arriba)
@@ -96,8 +99,11 @@ namespace TodoApi.Controllers
         [HttpPatch("{id:int}/status")]
         public async Task<ActionResult<TodoItem>> UpdateStatus(int id, UpdateStatusDto dto)
         {
+            var ownerId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+
             var todoItem = await _context.TodoItems.FindAsync(id);
             if (todoItem == null) return NotFound();
+            if (todoItem.OwnerId != ownerId) return NotFound();
 
             var currentStatus = todoItem.Status;
 
@@ -126,7 +132,11 @@ namespace TodoApi.Controllers
         [HttpGet] //IEnumerable, el más recomendado / Task<ActionResult<List<TodoItem>> tambien sirve
         public async Task<ActionResult<IEnumerable<TodoItem>>> GetTodoItems([FromQuery] TodoStatus? status, [FromQuery] int? categoryId, [FromQuery] bool? overdue)
         {
-            var query = _context.TodoItems.Include(t => t.Category).AsQueryable();
+            var ownerId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+
+            var query = _context.TodoItems.Include(t => t.Category)
+                .Where(t => t.OwnerId == ownerId)
+                .AsQueryable();
 
             if (status.HasValue)
             {
@@ -152,8 +162,11 @@ namespace TodoApi.Controllers
         [HttpDelete("{id:int}")]
         public async Task<IActionResult> DeleteTodoItem(int id)
         {
+            var ownerId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            
             var todoItem = await _context.TodoItems.FindAsync(id);
             if (todoItem == null) return NotFound();
+            if (todoItem.OwnerId != ownerId) return NotFound();
 
             _context.TodoItems.Remove(todoItem);
             await _context.SaveChangesAsync();
@@ -164,9 +177,12 @@ namespace TodoApi.Controllers
         [HttpPut("{id:int}")]
         public async Task<ActionResult> UpdateTodoItem(int id, TodoItem updated)
         {
+            var ownerId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            
             var todoItem = await _context.TodoItems.FindAsync(id);
 
             if (todoItem == null) return NotFound(); //404
+            if (todoItem.OwnerId != ownerId) return NotFound();
 
             if (updated.CategoryId.HasValue)
             {
