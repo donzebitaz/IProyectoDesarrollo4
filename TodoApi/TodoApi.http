@@ -1,6 +1,72 @@
 @TodoApi_HostAddress = http://localhost:5014
 
-GET {{TodoApi_HostAddress}}/weatherforecast/
-Accept: application/json
+### 1. Registrar usuario de prueba
+POST {{TodoApi_HostAddress}}/api/auth/register
+Content-Type: application/json
 
-###
+{
+  "username": "usuarioPrueba",
+  "password": "Password123!"
+}
+
+### 2. Login para obtener Token JWT
+# Copiar el token recibido en la variable @token abajo
+# @name login
+POST {{TodoApi_HostAddress}}/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "usuarioPrueba",
+  "password": "Password123!"
+}
+
+### Variable del token JWT
+@token = {{login.response.body.token}}
+
+### 3. Crear tarea vencida (ej. fecha en el pasado)
+# @name createOverdue
+POST {{TodoApi_HostAddress}}/api/todoitems
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "title": "Tarea Vencida de Prueba",
+  "description": "Debe ser notificada",
+  "dueDate": "2026-10-01T12:00:00Z"
+}
+
+### 4. Crear tarea con fecha futura (no debe notificarse)
+POST {{TodoApi_HostAddress}}/api/todoitems
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "title": "Tarea Futura",
+  "description": "No debe ser notificada todavía",
+  "dueDate": "2026-11-01T12:00:00Z"
+}
+
+### 5. Notificar tareas vencidas (Primera vez: debe notificar la tarea vencida -> 200 OK, count: 1)
+POST {{TodoApi_HostAddress}}/api/todoitems/notificarvencidas
+Authorization: Bearer {{token}}
+
+### 6. Notificar tareas vencidas nuevamente (No debe duplicar -> 200 OK, count: 0)
+POST {{TodoApi_HostAddress}}/api/todoitems/notificarvencidas
+Authorization: Bearer {{token}}
+
+### 7. Actualizar la fecha de vencimiento a una posterior que también esté vencida
+@taskId = {{createOverdue.response.body.id}}
+PUT {{TodoApi_HostAddress}}/api/todoitems/{{taskId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "title": "Tarea Vencida con Nueva Fecha Posterior",
+  "description": "Fecha extendida pero vencida",
+  "dueDate": "2026-10-02T12:00:00Z"
+}
+
+### 8. Notificar tareas vencidas tras cambio de fecha límite (Debe volverse a notificar -> 200 OK, count: 1)
+POST {{TodoApi_HostAddress}}/api/todoitems/notificarvencidas
+Authorization: Bearer {{token}}
+
