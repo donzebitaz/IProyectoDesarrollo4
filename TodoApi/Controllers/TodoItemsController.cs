@@ -15,12 +15,12 @@ namespace TodoApi.Controllers
     public class TodoItemsController : ControllerBase
     {
         private readonly TodoDbContext _context;
-        private readonly INotificador _notificador;
+        private readonly IRevisionVencidasService _revisionService;
 
-        public TodoItemsController(TodoDbContext context, INotificador notificador)
+        public TodoItemsController(TodoDbContext context, IRevisionVencidasService revisionService)
         {
             _context = context;
-            _notificador = notificador;
+            _revisionService = revisionService;
         }
         //SYNC es cuando tengo una app y la aplicación se queda bloqueada hasta que la BD responda
         //ASYNC es cuando la aplicación realiza una petición a la base de datos y libera el hilo de ejecución actual mientras espera la respuesta, permitiendo que la aplicación continúe procesando otras solicitudes sin bloquearse.
@@ -52,7 +52,7 @@ namespace TodoApi.Controllers
         public async Task<ActionResult<TodoItem>> GetTodoItem(int id)
         {
             var ownerId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-            
+
             var todoItem = await _context.TodoItems
             .Include(t => t.Category)
             .FirstOrDefaultAsync(t => t.Id == id);//del contexto, saque que item es y guardelo
@@ -104,29 +104,11 @@ namespace TodoApi.Controllers
         public async Task<ActionResult> NotificarVencidas()
         {
             var ownerId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-            var now = DateTime.UtcNow;
 
-            var overdueItems = await _context.TodoItems
-                .Where(t => t.OwnerId == ownerId
-                    && t.Status != TodoStatus.Completada
-                    && t.Status != TodoStatus.Cancelada
-                    && t.DueDate != null
-                    && t.DueDate < now
-                    && (t.LastNotifiedDueDate == null || t.DueDate > t.LastNotifiedDueDate))
-                .ToListAsync();
+            // Solo las tareas vencidas del usuario autenticado
+            var notificadas = await _revisionService.RevisarYNotificarAsync(ownerId);
 
-            foreach (var item in overdueItems)
-            {
-                await _notificador.NotificarAsync(item);
-                item.LastNotifiedDueDate = item.DueDate;
-            }
-
-            if (overdueItems.Count > 0)
-            {
-                await _context.SaveChangesAsync();
-            }
-
-            return Ok(new { notificadas = overdueItems.Count, count = overdueItems.Count });
+            return Ok(new { notificadas, count = notificadas });
         }
 
         [HttpPatch("{id:int}/status")]
@@ -196,7 +178,7 @@ namespace TodoApi.Controllers
         public async Task<IActionResult> DeleteTodoItem(int id)
         {
             var ownerId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-            
+
             var todoItem = await _context.TodoItems.FindAsync(id);
             if (todoItem == null) return NotFound();
             if (todoItem.OwnerId != ownerId) return NotFound();
@@ -211,7 +193,7 @@ namespace TodoApi.Controllers
         public async Task<ActionResult> UpdateTodoItem(int id, TodoItem updated)
         {
             var ownerId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-            
+
             var todoItem = await _context.TodoItems.FindAsync(id);
 
             if (todoItem == null) return NotFound(); //404
