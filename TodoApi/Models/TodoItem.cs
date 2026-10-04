@@ -29,6 +29,8 @@ namespace TodoApi.Models
         public DateTime CreatedAt {get;set;} = DateTime.UtcNow; 
         public DateTime? CompletedAt {get;set;} 
         public DateTime? DueDate {get;set;}
+        // Guarda la fecha de vencimiento que ya fue notificada para evitar duplicados
+        public DateTime? LastNotifiedDueDate {get;set;}
 
         // Usuario que creo la tarea
         public string OwnerId {get;set;} = string.Empty;
