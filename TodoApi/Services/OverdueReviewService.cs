@@ -4,37 +4,38 @@ using TodoApi.Models;
 
 namespace TodoApi.Services
 {
-    public class RevisionVencidasService : IRevisionVencidasService
+    public class OverdueReviewService : IOverdueReviewService
     {
-        private static readonly SemaphoreSlim _candado = new(1, 1);
+        private static readonly SemaphoreSlim _lock = new(1, 1);
 
         private readonly TodoDbContext _context;
-        private readonly INotificador _notificador;
+        private readonly INotifier _notifier;
 
-        public RevisionVencidasService(TodoDbContext context, INotificador notificador)
+        public OverdueReviewService(TodoDbContext context, INotifier notifier)
         {
             _context = context;
-            _notificador = notificador;
+            _notifier = notifier;
         }
 
-        public async Task<int> RevisarYNotificarAsync(string? ownerId = null, CancellationToken cancellationToken = default)
+        public async Task<int> ReviewAndNotifyAsync(string? ownerId = null, CancellationToken cancellationToken = default)
         {
-            await _candado.WaitAsync(cancellationToken);
+            await _lock.WaitAsync(cancellationToken);
             try
             {
                 var now = DateTime.UtcNow;
 
-                // Tareas vencidas que todavía no están en un estado final
+                // Overdue tasks that have not reached a final status yet
                 var query = _context.TodoItems.Where(t =>
-                    t.Status != TodoStatus.Completada
-                    && t.Status != TodoStatus.Cancelada
+                    t.Status != TodoStatus.Completed
+                    && t.Status != TodoStatus.Canceled
                     && t.DueDate != null
                     && t.DueDate < now
-                    // No se notifica dos veces la misma fecha de vencimiento pero si la fecha se cambión
-                    // y se vuelve a vencer, significa que DueDate > LastNotifiedDueDate y se vuelve a notificar
+                    // The same due date is never notified twice. If the due date was changed
+                    // and the task becomes overdue again, DueDate > LastNotifiedDueDate
+                    // and it is notified again
                     && (t.LastNotifiedDueDate == null || t.DueDate > t.LastNotifiedDueDate));
 
-                // Disparo manual y automático
+                // Manual and automatic trigger
                 if (ownerId != null)
                 {
                     query = query.Where(t => t.OwnerId == ownerId);
@@ -44,7 +45,7 @@ namespace TodoApi.Services
 
                 foreach (var item in overdueItems)
                 {
-                    await _notificador.NotificarAsync(item);
+                    await _notifier.NotifyAsync(item);
                     item.LastNotifiedDueDate = item.DueDate;
                 }
 
@@ -57,7 +58,7 @@ namespace TodoApi.Services
             }
             finally
             {
-                _candado.Release();
+                _lock.Release();
             }
         }
     }

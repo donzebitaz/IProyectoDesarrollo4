@@ -9,7 +9,6 @@ public class TodoDbContext : IdentityDbContext<IdentityUser>
 {
     public TodoDbContext(DbContextOptions<TodoDbContext> options) :base(options)
     {}
-    //aquí se le dice con qué va a trabajar 
-    public DbSet<TodoItem> TodoItems {get;set;} // se agrega una lista de las tablas
+    public DbSet<TodoItem> TodoItems {get;set;} 
     public DbSet<Category> Categories { get; set; }
 }

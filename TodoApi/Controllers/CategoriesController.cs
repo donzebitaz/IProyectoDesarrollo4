@@ -59,31 +59,31 @@ namespace TodoApi.Controllers
             return NoContent();
         }
 
-        // Eliminar una categoria
+        // Delete a category
         [HttpDelete("{id:int}")]
         public async Task<ActionResult> DeleteCategory(int id)
         {
             var category = await _context.Categories.FindAsync(id);
 
-            if (category == null) return NotFound(); //404
+            if (category == null) return NotFound(); // Not Found (404)
 
-            //Verificar si la categoria tiene todoItemas asignados
+            // Check whether the category has assigned TodoItems
             var hasTodoItems = await _context.TodoItems
                 .AnyAsync(t => t.CategoryId == id);
 
 
-            // En caso positivo retornar un Conflict()
+            // If so, return a Conflict()
             if (hasTodoItems)
             {
                 return Conflict(
                     "The category cannot be deleted because it has TodoItems assigned to it."
-                ); //409
+                ); // Conflict 409
             }
 
             _context.Categories.Remove(category);
             await _context.SaveChangesAsync();
 
-            return NoContent(); //204
+            return NoContent(); // No Content 204
         }
     }
 }

@@ -2,7 +2,7 @@ using TodoApi.Models;
 
 namespace TodoApi.Services
 {
-    public interface INotificador
+    public interface INotifier
     {
         Task NotificarAsync(TodoItem todoItem);
     }

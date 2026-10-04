@@ -15,100 +15,94 @@ namespace TodoApi.Controllers
     public class TodoItemsController : ControllerBase
     {
         private readonly TodoDbContext _context;
-        private readonly IRevisionVencidasService _revisionService;
+        private readonly IOverdueReviewService _overdueReviewService;
 
-        public TodoItemsController(TodoDbContext context, IRevisionVencidasService revisionService)
+        public TodoItemsController(TodoDbContext context, IOverdueReviewService overdueReviewService)
         {
             _context = context;
-            _revisionService = revisionService;
+            _overdueReviewService = overdueReviewService;
         }
-        //SYNC es cuando tengo una app y la aplicación se queda bloqueada hasta que la BD responda
-        //ASYNC es cuando la aplicación realiza una petición a la base de datos y libera el hilo de ejecución actual mientras espera la respuesta, permitiendo que la aplicación continúe procesando otras solicitudes sin bloquearse.
 
-        //Diccionario de estados
+        // Dictionary of allowed status transitions
         private static readonly Dictionary<TodoStatus, TodoStatus[]> AllowedTransitions = new()
         {
-            [TodoStatus.Pendiente] = new[] { TodoStatus.EnProgreso, TodoStatus.Cancelada },
-            [TodoStatus.EnProgreso] = new[] { TodoStatus.Completada, TodoStatus.Cancelada },
-            [TodoStatus.Completada] = Array.Empty<TodoStatus>(),
-            [TodoStatus.Cancelada] = Array.Empty<TodoStatus>()
+            [TodoStatus.Pending] = new[] { TodoStatus.InProgress, TodoStatus.Canceled },
+            [TodoStatus.InProgress] = new[] { TodoStatus.Completed, TodoStatus.Canceled },
+            [TodoStatus.Completed] = Array.Empty<TodoStatus>(),
+            [TodoStatus.Canceled] = Array.Empty<TodoStatus>()
         };
 
 
-        // Se hace uso de un helper para guardar las fechas en UTC.
+        // Helper used to store dates in UTC
         private static DateTime? ToUtc(DateTime? date)
         {
             if (!date.HasValue) return null;
 
             return date.Value.Kind switch
             {
-                DateTimeKind.Utc => date.Value,                         // ya viene en UTC
-                DateTimeKind.Local => date.Value.ToUniversalTime(),     // convertir a UTC
-                _ => DateTime.SpecifyKind(date.Value, DateTimeKind.Utc) // sin zona se asume UTC
+                DateTimeKind.Utc => date.Value, // Already in UTC
+                DateTimeKind.Local => date.Value.ToUniversalTime(), // Convert to UTC
+                _ => DateTime.SpecifyKind(date.Value, DateTimeKind.Utc) // No time zone specified, assume UTC
             };
         }
 
-        [HttpGet("{id:int}")]//indicando qué endpoint es
+        [HttpGet("{id:int}")]
         public async Task<ActionResult<TodoItem>> GetTodoItem(int id)
         {
             var ownerId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
             var todoItem = await _context.TodoItems
             .Include(t => t.Category)
-            .FirstOrDefaultAsync(t => t.Id == id);//del contexto, saque que item es y guardelo
-            //await -> cuando lo de la derecha funcione
+            .FirstOrDefaultAsync(t => t.Id == id);
 
-            if (todoItem == null) return NotFound();//404
+            if (todoItem == null) return NotFound(); // Not Found (404)
             if (todoItem.OwnerId != ownerId) return NotFound();
 
-            return Ok(todoItem); //200
-            //early returns, terminar un método antes de tiempo (no tiene else porque ya se valida arriba)
+            return Ok(todoItem); // OK (200)
+            // Early returns: end a method before reaching its last line
         }
 
         [HttpPost]
         public async Task<ActionResult<TodoItem>> CreateTodoItem(TodoItem todoItem)
         {
-            //validar si categoryid trae algo
-            //en caso positivo validar que el categoryid es válido
-            //en caso de que no sea válido retornar un BadRequest()
+            // Check whether CategoryId has a value
+            // If so, check that the CategoryId is valid
+            // If it is not valid, return a BadRequest()
             if (todoItem.CategoryId.HasValue)
             {
                 var categoryExists = await _context.Categories.AnyAsync(t => t.Id == todoItem.CategoryId);
-                if (!categoryExists) return BadRequest("The specified category does not exist");//early return valido lo que puede salir mal y al final lo que quiero que salga completamente
+                if (!categoryExists) return BadRequest("The specified category does not exist"); // Early return: check what can go wrong first and leave the desired outcome for the end
             }
 
 
-            //fix pendiente: para que el cliente no decida el estado y toda tarea nueva esté en "Pendiente".
-            todoItem.Status = TodoStatus.Pendiente;
+            // Fix: the client must not decide the status, every new task starts as Pending
+            todoItem.Status = TodoStatus.Pending;
             todoItem.CompletedAt = null;
 
-            // El servidor es quien decide el dueño, sin importar que venga dentro del body
+            // The server decides the owner, regardless of what comes in the body
             todoItem.OwnerId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
-            // El servidor decide cuándo se creó 
+            // The server decides when the task was created
             todoItem.CreatedAt = DateTime.UtcNow;
 
             todoItem.DueDate = ToUtc(todoItem.DueDate);
 
-            //hey contexto, vaya su lista de TodoItems y agregue este elemento
             _context.TodoItems.Add(todoItem);
 
-            //hey contexto, ahora sí guarde los cambios en la base de datos
             await _context.SaveChangesAsync();
 
-            ///return ok, but not works, because of convection
-            return CreatedAtAction(nameof(GetTodoItem), new { id = todoItem.Id }, todoItem);//201: created and info of the new object
+            return CreatedAtAction(nameof(GetTodoItem), new { id = todoItem.Id }, todoItem); // Created (201) with the info of the new object
         }
 
         [HttpPost("notificarvencidas")]
-        public async Task<ActionResult> NotificarVencidas()
+        public async Task<ActionResult> NotifyOverdue()
         {
             var ownerId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
-            // Solo las tareas vencidas del usuario autenticado
-            var notificadas = await _revisionService.RevisarYNotificarAsync(ownerId);
+            // Only the overdue tasks of the authenticated user
+            var notified = await _overdueReviewService.ReviewAndNotifyAsync(ownerId);
 
-            return Ok(new { notificadas, count = notificadas });
+            return Ok(new { count = notified }); // OK 200
         }
 
         [HttpPatch("{id:int}/status")]
@@ -127,24 +121,24 @@ namespace TodoApi.Controllers
                 return BadRequest($"Cannot transition from {currentStatus} to {dto.Status}.");
             }
 
-            if (dto.Status == TodoStatus.Completada && todoItem.DueDate.HasValue && todoItem.DueDate.Value < DateTime.UtcNow
+            if (dto.Status == TodoStatus.Completed && todoItem.DueDate.HasValue && todoItem.DueDate.Value < DateTime.UtcNow
                && !dto.Force)
             {
                 return BadRequest("The task is overdue. Set \"force\": true to complete it anyway.");
             }
 
             todoItem.Status = dto.Status;
-            if (dto.Status == TodoStatus.Completada)
+            if (dto.Status == TodoStatus.Completed)
             {
                 todoItem.CompletedAt = DateTime.UtcNow;
             }
 
             await _context.SaveChangesAsync();
 
-            return Ok(todoItem);
+            return Ok(todoItem); // OK 200
         }
 
-        [HttpGet] //IEnumerable, el más recomendado / Task<ActionResult<List<TodoItem>> tambien sirve
+        [HttpGet]
         public async Task<ActionResult<IEnumerable<TodoItem>>> GetTodoItems([FromQuery] TodoStatus? status, [FromQuery] int? categoryId, [FromQuery] bool? overdue)
         {
             var ownerId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -163,15 +157,15 @@ namespace TodoApi.Controllers
                 query = query.Where(t => t.CategoryId == categoryId.Value);
             }
 
-            // solo se muestran las tareas vencidas que todavía no están en un estado final.
+            // Only overdue tasks that have not reached a final status are shown
             if (overdue == true)
             {
                 var now = DateTime.UtcNow;
-                query = query.Where(t => t.DueDate != null && t.DueDate < now && t.Status != TodoStatus.Completada
-                    && t.Status != TodoStatus.Cancelada);
+                query = query.Where(t => t.DueDate != null && t.DueDate < now && t.Status != TodoStatus.Completed
+                    && t.Status != TodoStatus.Canceled);
             }
 
-            return Ok(await query.ToListAsync());//200
+            return Ok(await query.ToListAsync()); // OK 200
         }
 
         [HttpDelete("{id:int}")]
@@ -186,7 +180,7 @@ namespace TodoApi.Controllers
             _context.TodoItems.Remove(todoItem);
             await _context.SaveChangesAsync();
 
-            return NoContent();
+            return NoContent(); // No Content 204
         }
 
         [HttpPut("{id:int}")]
@@ -196,7 +190,7 @@ namespace TodoApi.Controllers
 
             var todoItem = await _context.TodoItems.FindAsync(id);
 
-            if (todoItem == null) return NotFound(); //404
+            if (todoItem == null) return NotFound(); // Not Found (404)
             if (todoItem.OwnerId != ownerId) return NotFound();
 
             if (updated.CategoryId.HasValue)
@@ -213,18 +207,7 @@ namespace TodoApi.Controllers
 
             await _context.SaveChangesAsync();
 
-            return NoContent();
+            return NoContent(); // No Content 204
         }
     }
 }
-//HTTP GET
-//HTTP POST
-//HTTP PUT
-//HTTP PATCH
-//HTTP DELETE
-
-//Lista de todos los TODO
-//Muestre un TODO en particular
-//Agregar nuevos TODO
-//Modificar/actualizar TODO
-//Eliminar TODO

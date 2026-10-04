@@ -24,33 +24,36 @@ namespace TodoApi.Controllers
         [HttpPost("register")]
         public async Task<ActionResult> Register(Credentials credentials)
         {
-            var user = new IdentityUser() {UserName = credentials.Username};//tipo JSON
-            //user.UserName = credentials.Username;
+            // JSON-like object initializer
+            var user = new IdentityUser() {UserName = credentials.Username};
             var result = await _userManager.CreateAsync(user, credentials.Password);
 
             if(!result.Succeeded)
             {
-                return BadRequest(result.Errors.Select(e => e.Description)); //esto cuando ocurre un error
+                // Returned when an error occurs
+                return BadRequest(result.Errors.Select(e => e.Description));
             }
 
-            return StatusCode(StatusCodes.Status201Created, new {message = "User created successfully"});//201 created
+            return StatusCode(StatusCodes.Status201Created, new {message = "User created successfully"}); // Created (201)
         }
 
         [HttpPost("login")]
         public async Task<ActionResult> Login(Credentials credentials)
         {
-            var user = await _userManager.FindByNameAsync(credentials.Username);//veo si el usuario es correcto
+            // Check that the user exists
+            var user = await _userManager.FindByNameAsync(credentials.Username);
             if(user == null)
-                return Unauthorized("Invalid username or password");//por temas de seguridad
+                return Unauthorized("Invalid username or password"); // Same message in both cases for security reasons
 
-                                                //este check lo que hace es que con el password en texto plano, le concatena el security stamp, lo procesa y tiene que dar el hash
-            var passwordValid = await _userManager.CheckPasswordAsync(user, credentials.Password);//veo si la contraseña es correcta
+            // This check takes the plain-text password, concatenates the security stamp,
+            // processes it, and the result must match the stored hash
+            var passwordValid = await _userManager.CheckPasswordAsync(user, credentials.Password);
             if(!passwordValid) 
                 return Unauthorized("Invalid username or password");
 
-            //se puede devolver un mensaje de éxito o un tóken
-            //este tóken consiste en no tener que iniciar sesión todas las veces, sino, dejar la sesión abierta
-            //antes teníamos:  return Ok(new {message = "Login seccessfull"});, pero considerando el tóken, queda así:
+            // A success message or a token can be returned
+            // The token avoids having to log in every time, because it keeps the session open
+            // Before: return Ok(new {message = "Login successful"});, now with the token:
 
             var jwtSettings = _configuration.GetSection("Jwt");
             var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings["Key"]!));    
@@ -62,13 +65,14 @@ namespace TodoApi.Controllers
                 new Claim(ClaimTypes.Name, user.UserName!)
             };
 
-            var expireInMinutes = double.Parse(jwtSettings["ExpireInMinutes"]!);//ese ! es para que el sistema confíe en mí de que no va a ser nulo
+            // The ! tells the compiler to trust that the value will not be null
+            var expireInMinutes = double.Parse(jwtSettings["ExpireInMinutes"]!);
 
             var token = new JwtSecurityToken(
                 issuer: jwtSettings["Issuer"],
                 audience: jwtSettings["Audience"],
                 claims: claims,
-                expires: DateTime.UtcNow.AddMinutes(expireInMinutes),//seión abierta
+                expires: DateTime.UtcNow.AddMinutes(expireInMinutes), // Keeps the session open
                 signingCredentials: signingCredentials
             );
 
