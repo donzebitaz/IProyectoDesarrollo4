@@ -5,6 +5,7 @@ using TodoApi.Data;
 using TodoApi.Models;
 using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
+using TodoApi.Services;
 
 namespace TodoApi.Controllers
 {
@@ -14,9 +15,12 @@ namespace TodoApi.Controllers
     public class TodoItemsController : ControllerBase
     {
         private readonly TodoDbContext _context;
-        public TodoItemsController(TodoDbContext context)
+        private readonly INotificador _notificador;
+
+        public TodoItemsController(TodoDbContext context, INotificador notificador)
         {
             _context = context;
+            _notificador = notificador;
         }
         //SYNC es cuando tengo una app y la aplicación se queda bloqueada hasta que la BD responda
         //ASYNC es cuando la aplicación realiza una petición a la base de datos y libera el hilo de ejecución actual mientras espera la respuesta, permitiendo que la aplicación continúe procesando otras solicitudes sin bloquearse.
@@ -94,6 +98,35 @@ namespace TodoApi.Controllers
 
             ///return ok, but not works, because of convection
             return CreatedAtAction(nameof(GetTodoItem), new { id = todoItem.Id }, todoItem);//201: created and info of the new object
+        }
+
+        [HttpPost("notificarvencidas")]
+        public async Task<ActionResult> NotificarVencidas()
+        {
+            var ownerId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var now = DateTime.UtcNow;
+
+            var overdueItems = await _context.TodoItems
+                .Where(t => t.OwnerId == ownerId
+                    && t.Status != TodoStatus.Completada
+                    && t.Status != TodoStatus.Cancelada
+                    && t.DueDate != null
+                    && t.DueDate < now
+                    && (t.LastNotifiedDueDate == null || t.DueDate > t.LastNotifiedDueDate))
+                .ToListAsync();
+
+            foreach (var item in overdueItems)
+            {
+                await _notificador.NotificarAsync(item);
+                item.LastNotifiedDueDate = item.DueDate;
+            }
+
+            if (overdueItems.Count > 0)
+            {
+                await _context.SaveChangesAsync();
+            }
+
+            return Ok(new { notificadas = overdueItems.Count, count = overdueItems.Count });
         }
 
         [HttpPatch("{id:int}/status")]
