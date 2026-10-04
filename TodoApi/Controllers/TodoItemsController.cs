@@ -168,6 +168,61 @@ namespace TodoApi.Controllers
             return Ok(await query.ToListAsync()); // OK 200
         }
 
+        // Task statistics
+        [HttpGet("stats")]
+        public async Task<ActionResult<TodoStatsDto>> GetStats()
+        {
+            var ownerId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var now = DateTime.UtcNow;
+
+            // Only the tasks of the authenticated user
+            var tasks = await _context.TodoItems
+                .AsNoTracking()
+                .Where(t => t.OwnerId == ownerId)
+                .ToListAsync();
+
+            // LINQ, group by status and count each group
+            var countByStatus = tasks
+                .GroupBy(t => t.Status)
+                .ToDictionary(g => g.Key, g => g.Count());
+
+            // LINQ, count with a condition 
+            var overdueCount = tasks.Count(t =>
+                t.DueDate != null
+                && t.DueDate < now
+                && t.Status != TodoStatus.Completed
+                && t.Status != TodoStatus.Canceled);
+
+            // TimeSpan, duration between creation and completion of each completed task
+            List<TimeSpan> durations = tasks
+                .Where(t => t.Status == TodoStatus.Completed && t.CompletedAt != null)
+                .Select(t => t.CompletedAt!.Value - t.CreatedAt)
+                .ToList();
+
+            // Average in days (null if there are no completed tasks)
+            double? averageDays = null;
+            if (durations.Count > 0)
+            {
+                averageDays = Math.Round(durations.Average(d => d.TotalDays), 2);
+            }
+
+            var stats = new TodoStatsDto
+            {
+                TotalTasks = tasks.Count,
+
+                // If a status has no tasks it does not appear in the dictionary, so 0 is used
+                Pending = countByStatus.GetValueOrDefault(TodoStatus.Pending, 0),
+                InProgress = countByStatus.GetValueOrDefault(TodoStatus.InProgress, 0),
+                Completed = countByStatus.GetValueOrDefault(TodoStatus.Completed, 0),
+                Canceled = countByStatus.GetValueOrDefault(TodoStatus.Canceled, 0),
+
+                OverdueTasks = overdueCount,
+                AverageDaysToComplete = averageDays
+            };
+
+            return Ok(stats); // OK 200
+        }
+
         [HttpDelete("{id:int}")]
         public async Task<IActionResult> DeleteTodoItem(int id)
         {

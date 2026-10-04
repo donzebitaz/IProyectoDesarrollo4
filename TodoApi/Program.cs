@@ -8,22 +8,24 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Enums are read and written as text in JSON (for example "InProgress") instead of numbers
 builder.Services.AddControllers()
     .AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(
             new System.Text.Json.Serialization.JsonStringEnumConverter()));
 builder.Services.AddEndpointsApiExplorer();
-//builder.Services.AddSwaggerGen();
+// builder.Services.AddSwaggerGen();
 
-builder.Services.AddScoped<INotificador, LogNotificador>();
+// Overdue notifications: the notifier is an interface, so its implementation can change later
+builder.Services.AddScoped<INotifier, LogNotifier>();
+builder.Services.AddScoped<IOverdueReviewService, OverdueReviewService>();
 
-builder.Services.AddScoped<IRevisionVencidasService, RevisionVencidasService>();
-
-builder.Services.AddHostedService<RevisionVencidasBackgroundService>();
+// Automatic overdue review that runs in the background, without any HTTP request
+builder.Services.AddHostedService<OverdueReviewBackgroundService>();
 
 builder.Services.AddDbContext<TodoDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("HostingConnection")));
 
-    builder.Services.AddIdentityCore<IdentityUser>()
+builder.Services.AddIdentityCore<IdentityUser>()
     .AddEntityFrameworkStores<TodoDbContext>();
 
 var jwtSettings = builder.Configuration.GetSection("Jwt");
@@ -50,8 +52,8 @@ var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
 {
-    /*app.UseSwagger();
-    app.UseSwaggerUI();*/
+    // app.UseSwagger();
+    // app.UseSwaggerUI();
 }
 
 app.UseHttpsRedirection();

@@ -4,6 +4,6 @@ namespace TodoApi.Services
 {
     public interface INotifier
     {
-        Task NotificarAsync(TodoItem todoItem);
+        Task NotifyAsync(TodoItem todoItem);
     }
 }
