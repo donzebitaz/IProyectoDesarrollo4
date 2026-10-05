@@ -4,10 +4,10 @@ namespace TodoApi.Models
 {
     public enum TodoStatus
     {
-        Pending,
-        InProgress,
-        Completed,
-        Canceled
+        Pendiente,
+        EnProgreso,
+        Completada,
+        Cancelada
     }
 
     public class TodoItem 
@@ -22,21 +22,21 @@ namespace TodoApi.Models
         [MaxLength(1000)]
         public string Description {get;set;} = string.Empty;
 
-        // The state machine is now used:
-        // TodoStatus instead of the boolean IsCompleted
-        public TodoStatus Status {get;set;} = TodoStatus.Pending;
+        // Ahora se utiliza la maquina de estados
+        // TodoStatus en lugar del booleano IsCompleted
+        public TodoStatus Status {get;set;} = TodoStatus.Pendiente;
 
         public DateTime CreatedAt {get;set;} = DateTime.UtcNow; 
         public DateTime? CompletedAt {get;set;} 
         public DateTime? DueDate {get;set;}
 
-        // Stores the due date that was already notified to avoid duplicates
+        // Guarda la fecha de vencimiento que ya fue notificada para evitar duplicados
         public DateTime? LastNotifiedDueDate {get;set;}
 
-        // User who created the task
+        // Usuario que creo la tarea
         public string OwnerId {get;set;} = string.Empty;
 
-        // Foreign key
+        // Llave foranea
         public int? CategoryId {get;set;}
         public Category? Category {get;set;}
     }

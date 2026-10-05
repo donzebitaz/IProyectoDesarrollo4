@@ -23,26 +23,26 @@ namespace TodoApi.Controllers
             _overdueReviewService = overdueReviewService;
         }
 
-        // Dictionary of allowed status transitions
+        // Diccionario de estados permitidos
         private static readonly Dictionary<TodoStatus, TodoStatus[]> AllowedTransitions = new()
         {
-            [TodoStatus.Pending] = new[] { TodoStatus.InProgress, TodoStatus.Canceled },
-            [TodoStatus.InProgress] = new[] { TodoStatus.Completed, TodoStatus.Canceled },
-            [TodoStatus.Completed] = Array.Empty<TodoStatus>(),
-            [TodoStatus.Canceled] = Array.Empty<TodoStatus>()
+            [TodoStatus.Pendiente] = new[] { TodoStatus.EnProgreso, TodoStatus.Cancelada },
+            [TodoStatus.EnProgreso] = new[] { TodoStatus.Completada, TodoStatus.Cancelada },
+            [TodoStatus.Completada] = Array.Empty<TodoStatus>(),
+            [TodoStatus.Cancelada] = Array.Empty<TodoStatus>()
         };
 
 
-        // Helper used to store dates in UTC
+        // Se hace uso de un helper para guardar las fechas en UTC.
         private static DateTime? ToUtc(DateTime? date)
         {
             if (!date.HasValue) return null;
 
             return date.Value.Kind switch
             {
-                DateTimeKind.Utc => date.Value, // Already in UTC
-                DateTimeKind.Local => date.Value.ToUniversalTime(), // Convert to UTC
-                _ => DateTime.SpecifyKind(date.Value, DateTimeKind.Utc) // No time zone specified, assume UTC
+                DateTimeKind.Utc => date.Value,                         // ya viene en UTC
+                DateTimeKind.Local => date.Value.ToUniversalTime(),     // convertir a UTC
+                _ => DateTime.SpecifyKind(date.Value, DateTimeKind.Utc) // sin zona se asume UTC
             };
         }
 
@@ -55,34 +55,32 @@ namespace TodoApi.Controllers
             .Include(t => t.Category)
             .FirstOrDefaultAsync(t => t.Id == id);
 
-            if (todoItem == null) return NotFound(); // Not Found (404)
+            if (todoItem == null) return NotFound(); //404
             if (todoItem.OwnerId != ownerId) return NotFound();
 
-            return Ok(todoItem); // OK (200)
-            // Early returns: end a method before reaching its last line
+            return Ok(todoItem); //200
         }
 
         [HttpPost]
         public async Task<ActionResult<TodoItem>> CreateTodoItem(TodoItem todoItem)
         {
-            // Check whether CategoryId has a value
-            // If so, check that the CategoryId is valid
-            // If it is not valid, return a BadRequest()
+            //validar si categoryid trae algo
+            //en caso positivo validar que el categoryid es valido
+            //en caso de que no sea valido retornar un BadRequest()
             if (todoItem.CategoryId.HasValue)
             {
                 var categoryExists = await _context.Categories.AnyAsync(t => t.Id == todoItem.CategoryId);
-                if (!categoryExists) return BadRequest("The specified category does not exist"); // Early return: check what can go wrong first and leave the desired outcome for the end
+                if (!categoryExists) return BadRequest("The specified category does not exist");
             }
 
-
-            // Fix: the client must not decide the status, every new task starts as Pending
-            todoItem.Status = TodoStatus.Pending;
+            //fix pendiente: para que el cliente no decida el estado y toda tarea nueva este en "Pendiente".
+            todoItem.Status = TodoStatus.Pendiente;
             todoItem.CompletedAt = null;
 
-            // The server decides the owner, regardless of what comes in the body
+            // El servidor es quien decide el dueno, sin importar que venga dentro del body
             todoItem.OwnerId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
-            // The server decides when the task was created
+            // El servidor decide cuando se creo
             todoItem.CreatedAt = DateTime.UtcNow;
 
             todoItem.DueDate = ToUtc(todoItem.DueDate);
@@ -91,7 +89,7 @@ namespace TodoApi.Controllers
 
             await _context.SaveChangesAsync();
 
-            return CreatedAtAction(nameof(GetTodoItem), new { id = todoItem.Id }, todoItem); // Created (201) with the info of the new object
+            return CreatedAtAction(nameof(GetTodoItem), new { id = todoItem.Id }, todoItem); //201
         }
 
         [HttpPost("notificarvencidas")]
@@ -99,10 +97,10 @@ namespace TodoApi.Controllers
         {
             var ownerId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
-            // Only the overdue tasks of the authenticated user
+            // Solo las tareas vencidas del usuario autenticado
             var notified = await _overdueReviewService.ReviewAndNotifyAsync(ownerId);
 
-            return Ok(new { count = notified }); // OK 200
+            return Ok(new { count = notified }); //200
         }
 
         [HttpPatch("{id:int}/status")]
@@ -121,21 +119,21 @@ namespace TodoApi.Controllers
                 return BadRequest($"Cannot transition from {currentStatus} to {dto.Status}.");
             }
 
-            if (dto.Status == TodoStatus.Completed && todoItem.DueDate.HasValue && todoItem.DueDate.Value < DateTime.UtcNow
+            if (dto.Status == TodoStatus.Completada && todoItem.DueDate.HasValue && todoItem.DueDate.Value < DateTime.UtcNow
                && !dto.Force)
             {
                 return BadRequest("The task is overdue. Set \"force\": true to complete it anyway.");
             }
 
             todoItem.Status = dto.Status;
-            if (dto.Status == TodoStatus.Completed)
+            if (dto.Status == TodoStatus.Completada)
             {
                 todoItem.CompletedAt = DateTime.UtcNow;
             }
 
             await _context.SaveChangesAsync();
 
-            return Ok(todoItem); // OK 200
+            return Ok(todoItem); //200
         }
 
         [HttpGet]
@@ -157,49 +155,49 @@ namespace TodoApi.Controllers
                 query = query.Where(t => t.CategoryId == categoryId.Value);
             }
 
-            // Only overdue tasks that have not reached a final status are shown
+            // solo se muestran las tareas vencidas que todavia no estan en un estado final.
             if (overdue == true)
             {
                 var now = DateTime.UtcNow;
-                query = query.Where(t => t.DueDate != null && t.DueDate < now && t.Status != TodoStatus.Completed
-                    && t.Status != TodoStatus.Canceled);
+                query = query.Where(t => t.DueDate != null && t.DueDate < now && t.Status != TodoStatus.Completada
+                    && t.Status != TodoStatus.Cancelada);
             }
 
-            return Ok(await query.ToListAsync()); // OK 200
+            return Ok(await query.ToListAsync()); //200
         }
 
-        // Task statistics
+        // Estadisticas de tareas
         [HttpGet("stats")]
         public async Task<ActionResult<TodoStatsDto>> GetStats()
         {
             var ownerId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
             var now = DateTime.UtcNow;
 
-            // Only the tasks of the authenticated user
+            // Solo las tareas del usuario autenticado
             var tasks = await _context.TodoItems
                 .AsNoTracking()
                 .Where(t => t.OwnerId == ownerId)
                 .ToListAsync();
 
-            // LINQ, group by status and count each group
+            // LINQ, se agrupa por estado y se cuenta cada grupo
             var countByStatus = tasks
                 .GroupBy(t => t.Status)
                 .ToDictionary(g => g.Key, g => g.Count());
 
-            // LINQ, count with a condition 
+            // LINQ, cuenta con una condicion
             var overdueCount = tasks.Count(t =>
                 t.DueDate != null
                 && t.DueDate < now
-                && t.Status != TodoStatus.Completed
-                && t.Status != TodoStatus.Canceled);
+                && t.Status != TodoStatus.Completada
+                && t.Status != TodoStatus.Cancelada);
 
-            // TimeSpan, duration between creation and completion of each completed task
+            // TimeSpan, duracion entre la creacion y el cierre de cada tarea completada
             List<TimeSpan> durations = tasks
-                .Where(t => t.Status == TodoStatus.Completed && t.CompletedAt != null)
+                .Where(t => t.Status == TodoStatus.Completada && t.CompletedAt != null)
                 .Select(t => t.CompletedAt!.Value - t.CreatedAt)
                 .ToList();
 
-            // Average in days (null if there are no completed tasks)
+            // Promedio en dias (nulo si no hay ninguna completada)
             double? averageDays = null;
             if (durations.Count > 0)
             {
@@ -210,17 +208,17 @@ namespace TodoApi.Controllers
             {
                 TotalTasks = tasks.Count,
 
-                // If a status has no tasks it does not appear in the dictionary, so 0 is used
-                Pending = countByStatus.GetValueOrDefault(TodoStatus.Pending, 0),
-                InProgress = countByStatus.GetValueOrDefault(TodoStatus.InProgress, 0),
-                Completed = countByStatus.GetValueOrDefault(TodoStatus.Completed, 0),
-                Canceled = countByStatus.GetValueOrDefault(TodoStatus.Canceled, 0),
+                // Si un estado no tiene tareas no aparece en el diccionario, por eso se usa 0
+                Pending = countByStatus.GetValueOrDefault(TodoStatus.Pendiente, 0),
+                InProgress = countByStatus.GetValueOrDefault(TodoStatus.EnProgreso, 0),
+                Completed = countByStatus.GetValueOrDefault(TodoStatus.Completada, 0),
+                Canceled = countByStatus.GetValueOrDefault(TodoStatus.Cancelada, 0),
 
                 OverdueTasks = overdueCount,
                 AverageDaysToComplete = averageDays
             };
 
-            return Ok(stats); // OK 200
+            return Ok(stats); //200
         }
 
         [HttpDelete("{id:int}")]
@@ -235,7 +233,7 @@ namespace TodoApi.Controllers
             _context.TodoItems.Remove(todoItem);
             await _context.SaveChangesAsync();
 
-            return NoContent(); // No Content 204
+            return NoContent(); //204
         }
 
         [HttpPut("{id:int}")]
@@ -245,7 +243,7 @@ namespace TodoApi.Controllers
 
             var todoItem = await _context.TodoItems.FindAsync(id);
 
-            if (todoItem == null) return NotFound(); // Not Found (404)
+            if (todoItem == null) return NotFound(); //404
             if (todoItem.OwnerId != ownerId) return NotFound();
 
             if (updated.CategoryId.HasValue)
@@ -262,7 +260,7 @@ namespace TodoApi.Controllers
 
             await _context.SaveChangesAsync();
 
-            return NoContent(); // No Content 204
+            return NoContent(); //204
         }
     }
 }

@@ -24,18 +24,17 @@ namespace TodoApi.Services
             {
                 var now = DateTime.UtcNow;
 
-                // Overdue tasks that have not reached a final status yet
+                // Tareas vencidas que todavia no estan en un estado final
                 var query = _context.TodoItems.Where(t =>
-                    t.Status != TodoStatus.Completed
-                    && t.Status != TodoStatus.Canceled
+                    t.Status != TodoStatus.Completada
+                    && t.Status != TodoStatus.Cancelada
                     && t.DueDate != null
                     && t.DueDate < now
-                    // The same due date is never notified twice. If the due date was changed
-                    // and the task becomes overdue again, DueDate > LastNotifiedDueDate
-                    // and it is notified again
+                    // No se notifica dos veces la misma fecha de vencimiento. Si la fecha se cambia
+                    // y la tarea vuelve a vencer, DueDate > LastNotifiedDueDate y se notifica de nuevo
                     && (t.LastNotifiedDueDate == null || t.DueDate > t.LastNotifiedDueDate));
 
-                // Manual and automatic trigger
+                // Disparo manual y automatico
                 if (ownerId != null)
                 {
                     query = query.Where(t => t.OwnerId == ownerId);

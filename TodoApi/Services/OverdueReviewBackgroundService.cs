@@ -1,12 +1,12 @@
 namespace TodoApi.Services
 {
-    // Runs the overdue task review continuously, without any HTTP request
+    // Corre la revision de tareas vencidas de forma continua, sin ninguna solicitud HTTP
     public class OverdueReviewBackgroundService : BackgroundService
     {
         private const int DefaultIntervalSeconds = 30;
 
-        // A BackgroundService is a singleton but IOverdueReviewService is scoped.
-        // The scope factory is injected into the singleton instead.
+        // Un BackgroundService es singleton pero IOverdueReviewService es scoped.
+        // Se le inyecta el scope factory al singleton en su lugar.
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<OverdueReviewBackgroundService> _logger;
         private readonly TimeSpan _interval;
@@ -34,7 +34,7 @@ namespace TodoApi.Services
             {
                 using var timer = new PeriodicTimer(_interval);
 
-                // The first review runs as soon as the app starts, then once per interval
+                // La primera revision corre apenas arranca la app, luego una vez por intervalo
                 do
                 {
                     await ReviewAsync(stoppingToken);
@@ -43,7 +43,7 @@ namespace TodoApi.Services
             }
             catch (OperationCanceledException)
             {
-                // Expected when the application is shutting down
+                // Esperado cuando la aplicacion se esta cerrando
             }
 
             _logger.LogInformation("Overdue task review stopped.");
@@ -53,7 +53,7 @@ namespace TodoApi.Services
         {
             try
             {
-                // New scope for each review
+                // Scope nuevo por cada revision
                 using var scope = _scopeFactory.CreateScope();
                 var service = scope.ServiceProvider.GetRequiredService<IOverdueReviewService>();
                 var notified = await service.ReviewAndNotifyAsync(null, stoppingToken);
@@ -69,7 +69,7 @@ namespace TodoApi.Services
             }
             catch (Exception ex)
             {
-                // If it fails, the error is logged and the review is retried on the next interval
+                // Si falla, se registra el error y se reintenta en el siguiente intervalo
                 _logger.LogError(ex, "Overdue task review failed. It will retry on the next interval.");
             }
         }
